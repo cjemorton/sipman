@@ -83,6 +83,17 @@ ADMIN_PASSWORD = os.environ.get('SIPMAN_ADMIN_PASS', 'ChangeMeNow!2026#sipman')
 # API token for programmatic access
 API_TOKEN = os.environ.get('SIPMAN_API_TOKEN', None)
 
+# JWT secret for Worker-to-backend authentication (multi-cluster mode)
+JWT_SECRET = os.environ.get('SIPMAN_JWT_SECRET', SECRET_KEY)
+
+# Cluster identification (multi-cluster mode)
+CLUSTER_ID = os.environ.get('CLUSTER_ID', 'primary')
+CLUSTER_NAME = os.environ.get('CLUSTER_NAME', 'SIP Manager Cluster')
+CLUSTER_BACKEND_URL = os.environ.get('CLUSTER_BACKEND_URL', '')
+
+# Allowed networks for JWT bypass (local network access)
+ALLOWED_NETWORKS = ['127.0.0.1', '10.60.0.0/24']
+
 # Allowed network for internal access
 ALLOWED_NETWORKS = ['127.0.0.1', '10.60.0.0/24']
 
@@ -408,14 +419,84 @@ def api_token_required(f):
         return f(*args, **kwargs)
     return decorated_function
 
-def generate_jwt_token(user):
-    """Generate a JWT token for API access."""
+def generate_jwt_token(user, cluster_id=None):
+    """Generate a JWT token for API access.
+    
+    When cluster_id is None and called locally, the token is scoped
+    to this cluster only. When called by the Worker with a specific
+    cluster_id, the token grants access to that cluster.
+    """
+    now = datetime.datetime.utcnow()
     payload = {
         'user': user,
-        'exp': datetime.datetime.utcnow() + datetime.timedelta(hours=24),
-        'iat': datetime.datetime.utcnow()
+        'cluster': cluster_id or CLUSTER_ID,
+        'exp': now + datetime.timedelta(hours=24),
+        'iat': now
     }
-    return pyjwt.encode(payload, SECRET_KEY, algorithm='HS256')
+    return pyjwt.encode(payload, JWT_SECRET, algorithm='HS256')
+
+def jwt_required(f):
+    """Decorator to require JWT token for API routes (multi-cluster mode).
+    
+    Used for Worker-to-backend authentication in multi-cluster setups.
+    Validates JWT tokens issued by the Cloudflare Worker frontend.
+    Falls back to local API token auth or session auth for direct access.
+    """
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        auth_header = request.headers.get('Authorization', '')
+        token = None
+        
+        # Try JWT Bearer token first
+        if auth_header.startswith('Bearer '):
+            token = auth_header[7:]
+            try:
+                payload = pyjwt.decode(token, JWT_SECRET, algorithms=['HS256'])
+                # Token is valid - attach user context
+                request.current_user = payload.get('user', 'worker')
+                request.current_cluster = payload.get('cluster', 'unknown')
+                return f(*args, **kwargs)
+            except pyjwt.ExpiredSignatureError:
+                return jsonify({"error": "JWT token expired"}), 401
+            except pyjwt.InvalidTokenError as e:
+                return jsonify({"error": f"Invalid JWT token: {str(e)}"}), 401
+        
+        # Fall back to local API token (for direct/local access)
+        # Re-parse auth header in case it was a raw token without Bearer prefix
+        if auth_header and not token:
+            token = auth_header
+            # Check against stored local API tokens
+            conn = get_db()
+            c = conn.cursor()
+            c.execute("SELECT * FROM api_tokens WHERE token = ?", (token,))
+            token_row = c.fetchone()
+            conn.close()
+            
+            if token_row:
+                if token_row['expires_at']:
+                    if datetime.datetime.now().isoformat() > token_row['expires_at']:
+                        return jsonify({"error": "Token expired"}), 401
+                return f(*args, **kwargs)
+        
+        # Fall back to session-based auth (local web UI access)
+        if 'user_id' in session:
+            return f(*args, **kwargs)
+        
+        return jsonify({"error": "Authentication required"}), 401
+    return decorated_function
+
+def validate_jwt(token):
+    """Validate a JWT token and return the payload.
+    
+    Returns (payload, None) on success, (None, error_message) on failure.
+    """
+    try:
+        payload = pyjwt.decode(token, JWT_SECRET, algorithms=['HS256'])
+        return payload, None
+    except pyjwt.ExpiredSignatureError:
+        return None, "Token expired"
+    except pyjwt.InvalidTokenError as e:
+        return None, str(e)
 
 # ============================================================
 # Routes - Auth
@@ -1157,8 +1238,55 @@ def api_gateways():
     gateways = query_kamailio("SELECT setid, destination, description FROM dispatcher ORDER BY setid, id")
     return jsonify(gateways)
 
+@app.route('/api/v1/cluster')
+@jwt_required
+def api_cluster():
+    """Return cluster identification and status information.
+    
+    Used by the Worker frontend to identify each cluster and
+    aggregate health/status across the entire infrastructure.
+    """
+    return jsonify({
+        'cluster_id': CLUSTER_ID,
+        'cluster_name': CLUSTER_NAME,
+        'backend_url': CLUSTER_BACKEND_URL,
+        'status': get_system_status(),
+        'db_connected': check_db_connection()[0],
+        'timestamp': datetime.datetime.utcnow().isoformat() + 'Z'
+    })
+
+@app.route('/api/v1/clusters')
+@jwt_required
+def api_clusters():
+    """List all registered clusters (for Worker-managed environments).
+    
+    In single-cluster mode, this just returns self.
+    In multi-cluster mode, the Worker manages the cluster registry.
+    """
+    # Check if we have cluster registry in SQLite settings
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("SELECT value FROM settings WHERE key = 'clusters'")
+    row = c.fetchone()
+    conn.close()
+    
+    if row:
+        try:
+            clusters = json.loads(row['value'])
+            return jsonify(clusters)
+        except (json.JSONDecodeError, TypeError):
+            pass
+    
+    # Default to just this cluster
+    return jsonify([{
+        'id': CLUSTER_ID,
+        'name': CLUSTER_NAME,
+        'backend_url': CLUSTER_BACKEND_URL or request.host_url.rstrip('/'),
+        'type': 'primary'
+    }])
+
 @app.route('/api/v1/statistics')
-@api_token_required
+@jwt_required
 def api_statistics():
     """Get system statistics."""
     stats = {}

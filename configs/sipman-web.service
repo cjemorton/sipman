@@ -20,6 +20,12 @@ Environment="MARIADB_PASS=cNN6bVkmbKaSlGiuxNt2EEP0GYCv6DfqfvOp5sNXjrvYI7ub4WDEm1
 Environment="MARIADB_DB=kamailio"
 Environment="SIPMAN_DB_PATH=/run/sipman/sipman.db"
 Environment="KAMCMD_SOCKET=/var/run/kamailio/kamailio_ctl"
+Environment="SIPMAN_ADMIN_USER=admin"
+Environment="SIPMAN_ADMIN_PASS=ChangeMeNow!2026#sipman"
+Environment="SIPMAN_JWT_SECRET=SIPMAN_SHARED_JWT_SECRET_2024_CHANGE_ME"
+Environment="CLUSTER_ID=primary"
+Environment="CLUSTER_NAME=Primary Cluster"
+Environment="CLUSTER_BACKEND_URL=https://sip.mrnet.work:5000"
 
 RuntimeDirectory=sipman
 RuntimeDirectoryMode=0755
