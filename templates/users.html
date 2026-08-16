@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SIP Manager - Users</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
+    <style>
+        :root {
+            --bg-dark: #0f0f23;
+            --bg-card: #1a1d2a;
+            --border-color: #2d3240;
+            --text-primary: #00d4ff;
+            --text-success: #00ff88;
+            --text-warning: #ffaa00;
+            --text-danger: #ff4757;
+            --text-muted: #8892b0;
+        }
+        body { background: var(--bg-dark); color: #e0e0e0; }
+        .sidebar { background: var(--bg-card); border-right: 1px solid var(--border-color); min-height: 100vh; }
+        .sidebar .nav-link { color: var(--text-muted); padding: 12px 20px; }
+        .sidebar .nav-link:hover, .sidebar .nav-link.active { color: var(--text-primary); background: rgba(0, 212, 255, 0.1); }
+        .card { background: var(--bg-card); border: 1px solid var(--border-color); color: #e0e0e0; }
+        .table th { background: rgba(0, 212, 255, 0.05); color: var(--text-primary); border-color: var(--border-color); }
+        .table td { border-color: var(--border-color); }
+        .table tbody tr:hover { background: rgba(0, 212, 255, 0.05); }
+        .stat-value { color: var(--text-primary); font-size: 2.5rem; font-weight: 700; }
+        .stat-label { color: var(--text-muted); font-size: 0.9rem; }
+    </style>
+</head>
+<body>
+    <div class="container-fluid">
+        <div class="row">
+            <div class="col-md-3 col-lg-2 px-0 sidebar">
+                <div class="p-3 border-bottom border-secondary">
+                    <h4 class="text-primary">SIP Manager</h4>
+                </div>
+                <nav class="nav flex-column">
+                    <a class="nav-link" href="/dashboard"><i class="bi bi-speedometer2"></i> Dashboard</a>
+                    <a class="nav-link active" href="/users"><i class="bi bi-people"></i> SIP Users</a>
+                    <a class="nav-link" href="/domains"><i class="bi bi-shield-check"></i> Domains</a>
+                    <a class="nav-link" href="/gateways"><i class="bi bi-router"></i> Gateways</a>
+                    <a class="nav-link" href="/dialplan"><i class="bi bi-project-diagram"></i> Dialplan</a>
+                    <a class="nav-link" href="/monitoring"><i class="bi bi-eye"></i> Monitoring</a>
+                    <a class="nav-link" href="/certificates"><i class="bi bi-shield-lock"></i> Certificates</a>
+                    <a class="nav-link" href="/system"><i class="bi bi-server"></i> System Status</a>
+                    <a class="nav-link" href="/profile"><i class="bi bi-person"></i> Profile</a>
+                    <a class="nav-link" href="/logout"><i class="bi bi-box-arrow-right"></i> Logout</a>
+                </nav>
+            </div>
+            <div class="col-md-9 col-lg-10 px-4 py-4">
+                <div class="d-flex justify-content-between align-items-center mb-4">
+                    <h1 class="h3"><i class="bi bi-people"></i> SIP Users</h1>
+                    <a href="/users/add" class="btn btn-primary"><i class="bi bi-person-plus"></i> Add User</a>
+                </div>
+                
+                {% with messages = get_flashed_messages(with_categories=true) %}
+                    {% if messages %}
+                        {% for category, message in messages %}
+                            <div class="alert alert-{{ 'danger' if category == 'error' else 'success' }} alert-dismissible fade show" role="alert">
+                                {{ message }}
+                                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                            </div>
+                        {% endfor %}
+                    {% endif %}
+                {% endwith %}
+                
+                <div class="card p-4">
+                    {% if users %}
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>#</th>
+                                    <th>Username</th>
+                                    <th>Domain</th>
+                                    <th>Email Address</th>
+                                    <th>HA1</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for user in users %}
+                                <tr>
+                                    <td><small>{{ user.id }}</small></td>
+                                    <td><strong>{{ user.username }}</strong></td>
+                                    <td><small>{{ user.domain }}</small></td>
+                                    <td><small>{{ user.email_address or '-' }}</small></td>
+                                    <td><small><code>{{ user.ha1 or 'N/A' }}</code></small></td>
+                                    <td>
+                                        <a href="/users/edit/{{ user.id }}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-pencil"></i></a>
+                                        <form method="POST" action="/users/delete/{{ user.id }}" style="display:inline;">
+                                            <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('Delete user {{ user.username }}?')"><i class="bi bi-trash"></i></button>
+                                        </form>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                    <p class="text-muted">No SIP users found. <a href="/users/add">Add one now</a>.</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

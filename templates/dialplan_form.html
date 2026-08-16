@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ 'Edit' if rule else 'Add' }} Dialplan Rule - SIP Manager</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
+    <style>
+        :root {
+            --bg-dark: #0f0f23;
+            --bg-card: #1a1d2a;
+            --border-color: #2d3240;
+            --text-primary: #00d4ff;
+            --text-muted: #8892b0;
+        }
+        body { background: var(--bg-dark); color: #e0e0e0; }
+        .sidebar { 
+            background: var(--bg-card); 
+            border-right: 1px solid var(--border-color);
+            min-height: 100vh;
+        }
+        .sidebar .nav-link { color: var(--text-muted); padding: 12px 20px; }
+        .sidebar .nav-link:hover, .sidebar .nav-link.active { 
+            color: var(--text-primary); 
+            background: rgba(0, 212, 255, 0.1);
+        }
+        .card { background: var(--bg-card); border: 1px solid var(--border-color); color: #e0e0e0; }
+        .form-control { background: #0f0f23; border: 1px solid var(--border-color); color: #e0e0e0; }
+        .form-control:focus { background: #0f0f23; border-color: var(--text-primary); color: #e0e0e0; box-shadow: 0 0 0 0.2rem rgba(0, 212, 255, 0.25); }
+        .btn-primary { background: var(--text-primary); border: none; }
+        .btn-primary:hover { background: rgba(0, 212, 255, 0.8); }
+        .btn-secondary { background: #6c757d; border: none; }
+        .btn-secondary:hover { background: #5a6268; }
+        .alert-success { background: rgba(0, 255, 136, 0.1); border-color: #00ff88; }
+        .alert-danger { background: rgba(255, 71, 87, 0.1); border-color: #ff4757; }
+        .form-label { color: var(--text-muted); }
+    </style>
+</head>
+<body>
+    <div class="container-fluid">
+        <div class="row">
+            <!-- Sidebar -->
+            <div class="col-md-3 col-lg-2 px-0 sidebar">
+                <div class="p-3 border-bottom border-secondary">
+                    <h4 class="text-primary">SIP Manager</h4>
+                </div>
+                <nav class="nav flex-column">
+                    <a class="nav-link" href="/dashboard"><i class="bi bi-speedometer2"></i> Dashboard</a>
+                    <a class="nav-link" href="/users"><i class="bi bi-people"></i> SIP Users</a>
+                    <a class="nav-link" href="/domains"><i class="bi bi-globe"></i> Domains</a>
+                    <a class="nav-link" href="/gateways"><i class="bi bi-router"></i> Gateways</a>
+                    <a class="nav-link active" href="/dialplan"><i class="bi bi-project-diagram"></i> Dialplan</a>
+                    <a class="nav-link" href="/monitoring"><i class="bi bi-activity"></i> Monitoring</a>
+                    <a class="nav-link" href="/certificates"><i class="bi bi-shield-lock"></i> Certificates</a>
+                    <a class="nav-link" href="/system"><i class="bi bi-gear"></i> System</a>
+                    <a class="nav-link" href="/profile"><i class="bi bi-person"></i> Profile</a>
+                    <a class="nav-link" href="/logout"><i class="bi bi-box-arrow-right"></i> Logout</a>
+                </nav>
+            </div>
+            
+            <!-- Main Content -->
+            <div class="col-md-9 col-lg-10 px-4 py-4">
+                <div class="d-flex justify-content-between align-items-center mb-4">
+                    <h1 class="h3">{{ 'Edit' if rule else 'Add' }} Dialplan Rule</h1>
+                    <span class="text-muted">Logged in as {{ username }}</span>
+                </div>
+                
+                <!-- Flashed Messages -->
+                {% with messages = get_flashed_messages(with_categories=true) %}
+                    {% if messages %}
+                        {% for category, message in messages %}
+                            <div class="alert alert-{{ 'danger' if category == 'error' else 'success' }} alert-dismissible fade show" role="alert">
+                                {{ message }}
+                                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                            </div>
+                        {% endfor %}
+                    {% endif %}
+                {% endwith %}
+                
+                <div class="card">
+                    <div class="card-header">
+                        <i class="bi bi-edit"></i> Dialplan Rule Details
+                    </div>
+                    <div class="card-body">
+                        <form method="POST">
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <div class="mb-3">
+                                        <label for="dpid" class="form-label">DPID</label>
+                                        <input type="number" class="form-control" id="dpid" name="dpid" 
+                                               value="{{ rule.dpid if rule else '1' }}" required>
+                                        <div class="form-text">Dialplan ID for grouping rules</div>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="mb-3">
+                                        <label for="pr" class="form-label">PR (Priority)</label>
+                                        <input type="number" class="form-control" id="pr" name="pr" 
+                                               value="{{ rule.pr if rule else '0' }}" required>
+                                        <div class="form-text">Processing priority (lower = higher priority)</div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <div class="mb-3">
+                                        <label for="match_op" class="form-label">Match Op</label>
+                                        <select class="form-control" id="match_op" name="match_op" required>
+                                            <option value="0" {{ 'selected' if (rule and rule.match_op == 0) or not rule }}>0 - RegExp (MI/Regexp)</option>
+                                            <option value="1" {{ 'selected' if rule and rule.match_op == 1 }}>1 - RegExp (Regexp)</option>
+                                            <option value="2" {{ 'selected' if rule and rule.match_op == 2 }}>2 - RegExp (MI)</option>
+                                            <option value="3" {{ 'selected' if rule and rule.match_op == 3 }}>3 - Equals</option>
+                                            <option value="4" {{ 'selected' if rule and rule.match_op == 4 }}>4 - Regexp (String)</option>
+                                        </select>
+                                        <div class="form-text">Matching operator type</div>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="mb-3">
+                                        <label for="match_exp" class="form-label">Match Exp</label>
+                                        <input type="text" class="form-control" id="match_exp" name="match_exp" 
+                                               value="{{ rule.match_exp if rule else '' }}" placeholder="e.g., ^1[0-9]{3}$">
+                                        <div class="form-text">Regex or pattern to match user part of SIP URI</div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <div class="mb-3">
+                                        <label for="match_len" class="form-label">Match Len</label>
+                                        <input type="number" class="form-control" id="match_len" name="match_len" 
+                                               value="{{ rule.match_len if rule else '0' }}">
+                                        <div class="form-text">Match length constraint (0 = ignore)</div>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="mb-3">
+                                        <label for="subst_exp" class="form-label">Subst Exp</label>
+                                        <input type="text" class="form-control" id="subst_exp" name="subst_exp" 
+                                               value="{{ rule.subst_exp if rule else '' }}" placeholder="e.g., s/555/1/">
+                                        <div class="form-text">Substitution expression for URI rewrite</div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label for="repl_exp" class="form-label">Repl Exp</label>
+                                <input type="text" class="form-control" id="repl_exp" name="repl_exp" 
+                                       value="{{ rule.repl_exp if rule else '' }}" placeholder="e.g., sip:gw@domain.com">
+                                <div class="form-text">Replacement expression (destination)</div>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label for="attrs" class="form-label">Attributes</label>
+                                <input type="text" class="form-control" id="attrs" name="attrs" 
+                                       value="{{ rule.attrs if rule else '' }}" placeholder="Additional attributes">
+                            </div>
+                            
+                            <div class="d-flex justify-content-end gap-2">
+                                <a href="/dialplan" class="btn btn-secondary">
+                                    <i class="bi bi-arrow-left"></i> Cancel
+                                </a>
+                                <button type="submit" class="btn btn-primary">
+                                    <i class="bi bi-save"></i> Save Rule
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

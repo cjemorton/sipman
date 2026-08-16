@@ -1,0 +1,44 @@
+[Unit]
+Description=SIP Manager Web UI
+After=network.target mariadb.service
+Wants=mariadb.service
+
+[Service]
+Type=simple
+User=root
+Group=nginx
+
+WorkingDirectory=/opt/sipman
+
+Environment="PATH=/usr/local/bin:/usr/bin:/bin:/root/.local/bin"
+Environment="PYTHONPATH=/root/.local/lib/python3.9/site-packages:/usr/lib64/python3.9/site-packages"
+Environment="FLASK_SECRET_KEY=SIPMAN_SECRET_KEY_CHANGE_ME_2024"
+Environment="MARIADB_HOST=localhost"
+Environment="MARIADB_PORT=3306"
+Environment="MARIADB_USER=sipman"
+Environment="MARIADB_PASS=cNN6bVkmbKaSlGiuxNt2EEP0GYCv6DfqfvOp5sNXjrvYI7ub4WDEm1qL9gBUITcA"
+Environment="MARIADB_DB=kamailio"
+Environment="SIPMAN_DB_PATH=/run/sipman/sipman.db"
+Environment="KAMCMD_SOCKET=/var/run/kamailio/kamailio_ctl"
+
+RuntimeDirectory=sipman
+RuntimeDirectoryMode=0755
+
+ExecStartPre=/bin/mkdir -p /run/sipman
+ExecStartPre=/bin/chmod 755 /run/sipman
+
+ExecStart=/usr/bin/python3 -m gunicorn \
+    --workers 4 \
+    --bind unix:/run/sipman/sipman.sock \
+    --access-logfile - \
+    --error-logfile - \
+    --timeout 30 \
+    --graceful-timeout 10 \
+    --umask 000 \
+    app:app
+
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
