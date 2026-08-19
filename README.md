@@ -1,210 +1,234 @@
-# SIP Manager - Pure Kamailio Web Management UI
+# SipMan Backend
 
-A lightweight, free-software web management interface for Kamailio SIP proxy,
-replacing dSIPRouter with a clean, minimal, well-documented setup.
-
-## Overview
-
-This project provides:
-
-1. **Pure Kamailio SIP proxy** - Clean kamailio.cfg without dSIPRouter bloat
-2. **RTPEngine** - Media relay for NAT traversal (unchanged from existing)
-3. **Custom Flask Web UI** - User/domain/gateway management + monitoring
-4. **nginx reverse proxy** - TLS termination on port 5000
-
-## Quick Start
-
-### Local Development
-
-```bash
-# Install dependencies
-pip install -r requirements.txt
-
-# Run development server
-python app.py
-# Visit http://127.0.0.1:8080
-```
-
-### Production Deployment
-
-On the target server (sip.mrnet.work):
-
-```bash
-# 1. Upload configs to /tmp/sipman_configs/
-# 2. Upload app to /tmp/sipman_app/
-# 3. Run deployment script
-sudo bash deploy.sh
-```
+A self-contained, Dockerized Kamailio SIP endpoint with a REST API for management. Designed for deployment in [Coolify](https://coolify.io) as a Docker container, with built-in multi-cluster peer sync for horizontal scaling.
 
 ## Architecture
 
 ```
-                    ┌──────────────────────────────┐
-                    │       sip.mrnet.work         │
-                    └──────────────────────────────┘
-                         SIP 5060/5061
-                              │
-        ┌─────────────────────┼─────────────────────┐
-        │                     │                     │
-        ▼                     ▼                     ▼
-┌─────────────┐    ┌──────────────┐    ┌──────────────────┐
-│   nginx     │    │  Kamailio    │    │   RTPEngine      │
-│  (port 5000)│    │  (port 5060) │    │  (port 7722 ctl) │
-│  TLS proxy  │    │  SIP proxy   │    │  media relay     │
-└─────┬───────┘    └──────┬───────┘    └────────┬─────────┘
-      │                   │                    │
-      ▼           kamcmd   │              rtpengine
-┌─────────────┐   unix    │                    │
-│ Flask/gunicorn │ ◄──────┘                    │
-│  Web UI     │                            ng ctrl
-└─────────────┘                            udp:127.0.0.1
-      │                                          │
-      │ MariaDB                                  ▼
-      │  3306                                  Media
-      └────────────────────────────────────── UDP
+┌─────────────────────────────────────────────────────┐
+│                   Docker Container                   │
+│                                                      │
+│  ┌──────────┐  ┌──────────┐  ┌───────────────────┐  │
+│  │ Kamailio │  │RTPEngine │  │  Flask API        │  │
+│  │ (SIP)    │  │ (Media)  │  │  (gunicorn :5000) │  │
+│  └────┬─────┘  └──────────┘  └────────┬──────────┘  │
+│       │                                │              │
+│  ┌────▼──────────────────────────────────▼────┐       │
+│  │              MariaDB (Kamailio data)        │       │
+│  └─────────────────────────────────────────────┘       │
+│                                                      │
+│  supervisord (process manager)                        │
+└─────────────────────────────────────────────────────┘
+         │                        │
+    SIP 5060/5061              REST API :5000
+    (internet-facing)          (proxy via Coolify/NPM)
 ```
 
-## Features
+The **Cloudflare Worker frontend** (`sipman-worker`) talks to the REST API on port 5000. SIP clients register directly to port 5060.
 
-### Web UI Features
-- **Login/Auth**: Session-based with bcrypt password hashing
-- **SIP Users**: List, add, edit, delete subscribers (auto-computes HA1)
-- **Domains**: List, add, delete SIP domains
-- **Gateways**: View and manage dispatcher/carrier gateways
-- **Monitoring**: Active registrations, active calls, recent CDRs
-- **System Status**: Service health checks, Kamailio stats, DB test
-- **API**: JSON-RPC proxy to kamcmd, user/domains/gateways REST API
+## What's Inside
 
-### Kamailio Features
-- SIP registration with digest authentication
-- Location tracking (usrloc)
-- NAT traversal with force_rport and SDP rewriting
-- RTPEngine integration for media relaying
-- Dispatcher-based carrier routing with health checks
-- Accounting (acc) to MariaDB
-- TLS support on port 5061
-- Rate limiting (pike) and flood protection
-- Multiple listen interfaces (internal + external)
+| Component | Purpose |
+|-----------|---------|
+| **Kamailio** | SIP proxy — registration, routing, auth, NAT traversal |
+| **RTPEngine** | Media relay — handles RTP traffic between endpoints |
+| **MariaDB** | Stores subscribers, locations, domains, dispatcher, CDRs |
+| **Flask API** | REST API for the Worker frontend to manage the endpoint |
+| **supervisord** | Manages all processes, auto-restart on crash |
 
-## Default Credentials
+## REST API
 
-- **Web UI**: admin / admin
-- **SIP Users**: All use password `Morton@1645`
-  - Extensions: 100, 102, 430, 764, 765, 784, 783
+All endpoints under `/api/v1/` require JWT authentication (except `/health` and `/api/v1/login`).
 
-## Configuration
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/api/v1/login` | Authenticate, get JWT token |
+| GET | `/api/v1/cluster` | Cluster identity & status |
+| GET | `/api/v1/clusters` | List all known clusters |
+| POST | `/api/v1/clusters` | Register a cluster |
+| POST | `/api/v1/cluster/sync` | Trigger full data push to peers |
+| GET | `/api/v1/users` | List SIP users |
+| POST | `/api/v1/users` | Create SIP user |
+| GET | `/api/v1/users/:id` | Get single user |
+| PUT | `/api/v1/users/:id` | Update user |
+| DELETE | `/api/v1/users/:id` | Delete user |
+| GET | `/api/v1/users/export` | Export users as CSV |
+| GET | `/api/v1/domains` | List domains |
+| POST | `/api/v1/domains` | Create domain |
+| PUT | `/api/v1/domains/:id` | Update domain |
+| DELETE | `/api/v1/domains/:id` | Delete domain |
+| GET | `/api/v1/gateways` | List gateways |
+| POST | `/api/v1/gateways` | Create gateway |
+| PUT | `/api/v1/gateways/:id` | Update gateway |
+| DELETE | `/api/v1/gateways/:id` | Delete gateway |
+| GET | `/api/v1/gateways/health` | Ping all gateways |
+| GET | `/api/v1/statistics` | Call stats, registrations, CDRs |
+| GET | `/api/v1/monitoring` | Detailed monitoring data |
+| GET | `/api/v1/profile` | Admin profile |
+| PUT | `/api/v1/profile` | Change admin password |
+| GET | `/health` | Health check (no auth) |
 
-### Environment Variables
+### Peer Sync (Internal, `X-Peer-Secret` auth)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST/PUT | `/sync/users` | Replicate subscriber |
+| DELETE | `/sync/users` | Delete subscriber |
+| POST/PUT | `/sync/domains` | Replicate domain |
+| DELETE | `/sync/domains` | Delete domain |
+| POST/PUT | `/sync/gateways` | Replicate gateway |
+| DELETE | `/sync/gateways` | Delete gateway |
+| POST | `/sync/full` | Full data sync |
+
+## Deployment in Coolify
+
+### 1. Deploy the Container
+
+1. In Coolify, create a new resource → **Docker Compose** (or connect this Git repo)
+2. The `docker-compose.yml` is auto-detected
+3. Set the environment variables (see `.env.example`):
+   - `SIP_DOMAIN` — your SIP domain (e.g. `sip.mrnet.work`)
+   - `SIP_EXTERNAL_IP` — the server's public IP
+   - `SIPMAN_ADMIN_PASS` — change the default admin password
+   - `SIPMAN_JWT_SECRET` — must match the Worker's `JWT_SECRET`
+   - `MARIADB_PASS` — set a strong database password
+4. Deploy
+
+### 2. Network
+
+- **Port 5000** (API): Proxy through Coolify's built-in proxy or Nginx Proxy Manager. This is what the Cloudflare Worker connects to.
+- **Ports 5060/5061** (SIP): Must be exposed directly to the internet (not proxied). SIP doesn't work well behind HTTP reverse proxies.
+- **Ports 10000-20000/udp** (RTP): Media ports for RTPEngine. Must be open on the firewall.
+
+### 3. Connect the Worker
+
+In the Cloudflare Worker (`sipman-worker`), update `CLUSTER_BACKEND_URL` to point to this container's API:
+```
+CLUSTER_BACKEND_URL = https://sipman-api.yourdomain.com
+```
+Ensure `JWT_SECRET` in the Worker matches `SIPMAN_JWT_SECRET` in the container.
+
+## Multi-Cluster Setup
+
+To scale horizontally, deploy multiple instances. Each is independent but shares users, domains, and gateways via peer sync.
+
+### How It Works
+
+1. **API-level sync**: When you create a user on node-A, node-A replicates the change to node-B, node-C, etc. via `/sync/*` endpoints. All nodes have identical subscriber/domain/gateway tables.
+2. **DMQ (SIP-level sync)**: Kamailio's DMQ module replicates live registration/location data between nodes, so a call to any node can reach a user registered on any other node.
+3. **Independent operation**: If a peer goes down, the others continue working. When it comes back, trigger a full sync via `POST /api/v1/cluster/sync`.
+
+### Configuring Peers
+
+**Node A** (`CLUSTER_ID=node-a`):
+```env
+PEER_NODES=http://node-b-ip:5000,http://node-c-ip:5000
+PEER_SYNC_SECRET=your-shared-secret-here
+```
+
+**Node B** (`CLUSTER_ID=node-b`):
+```env
+PEER_NODES=http://node-a-ip:5000,http://node-c-ip:5000
+PEER_SYNC_SECRET=your-shared-secret-here
+```
+
+**Node C** (`CLUSTER_ID=node-c`):
+```env
+PEER_NODES=http://node-a-ip:5000,http://node-b-ip:5000
+PEER_SYNC_SECRET=your-shared-secret-here
+```
+
+All nodes must share the same `PEER_SYNC_SECRET`.
+
+### Registering Clusters in the Worker
+
+In the Cloudflare Worker's `CLUSTER_CONFIG`, add each node:
+```js
+const CLUSTER_CONFIG = {
+  "node-a": { name: "Node A", backend_url: "https://node-a-api.example.com", type: "primary" },
+  "node-b": { name: "Node B", backend_url: "https://node-b-api.example.com", type: "secondary" },
+  "node-c": { name: "Node C", backend_url: "https://node-c-api.example.com", type: "secondary" },
+};
+```
+
+## Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `CLUSTER_ID` | `primary` | Unique ID for this node |
+| `CLUSTER_NAME` | `SIP Manager Cluster` | Display name |
+| `SIP_DOMAIN` | `sip.mrnet.work` | SIP domain |
+| `SIP_EXTERNAL_IP` | `127.0.0.1` | Public IP for NAT traversal |
+| `SIP_PORT` | `5060` | SIP signaling port |
+| `SIPS_PORT` | `5061` | SIP TLS port |
+| `MARIADB_DB` | `kamailio` | Database name |
+| `MARIADB_USER` | `kamailio` | Database user |
+| `MARIADB_PASS` | `kamailio` | Database password |
+| `MARIADB_ROOT_PASS` | (empty) | MariaDB root password |
+| `RTPENGINE_HOST` | `127.0.0.1` | RTPEngine control host |
+| `RTPENGINE_PORT` | `7722` | RTPEngine control port |
+| `RTPENGINE_INTERFACE` | `0.0.0.0` | RTPEngine bind interface |
+| `SIPMAN_ADMIN_USER` | `admin` | Default admin username |
+| `SIPMAN_ADMIN_PASS` | `ChangeMeNow!...` | Default admin password |
+| `SIPMAN_JWT_SECRET` | (random) | JWT signing secret |
+| `PEER_NODES` | (empty) | Comma-separated peer URLs |
+| `PEER_SYNC_SECRET` | (empty) | Shared secret for peer auth |
+| `PEER_SYNC_ENABLED` | `false` | Enable peer sync |
+| `CLUSTER_BACKEND_URL` | (empty) | Public API URL |
+| `CORS_ORIGINS` | `*` | Allowed CORS origins |
+
+## Project Structure
 
 ```
-FLASK_SECRET_KEY=...          # Session secret (change in production!)
-MARIADB_HOST=localhost        # Kamailio DB host
-MARIADB_PORT=3306             # Kamailio DB port
-MARIADB_USER=sipman           # Kamailio DB user (dedicated app user)
-MARIADB_PASS=<see service>    # Kamailio DB password (stored in systemd unit)
-MARIADB_DB=kamailio           # Kamailio DB name
-SIPMAN_DB_PATH=/run/sipman/sipman.db  # SQLite path for admin users
-KAMCMD_SOCKET=/var/run/kamailio/kamailio_ctl
-SIPMAN_ADMIN_USER=admin       # Initial admin username
-SIPMAN_ADMIN_PASS=<see note>  # Initial admin password (change immediately!)
+sipman/
+├── app/                    # Flask application (modular)
+│   ├── __init__.py         # App factory
+│   ├── config.py           # Environment-based config
+│   ├── auth.py             # JWT + token auth
+│   ├── database.py         # SQLite + MariaDB layer
+│   ├── kamailio.py         # kamcmd + process checks
+│   ├── peers.py            # Peer sync logic
+│   └── routes/             # REST API blueprints
+│       ├── auth.py
+│       ├── cluster.py
+│       ├── domains.py
+│       ├── gateways.py
+│       ├── health.py
+│       ├── peers.py
+│       ├── profile.py
+│       ├── statistics.py
+│       └── users.py
+├── docker/                 # Container configs
+│   ├── entrypoint.sh       # Startup script
+│   ├── supervisord.conf    # Process manager
+│   ├── kamailio.cfg.tmpl   # Kamailio config template
+│   ├── tls.cfg.tmpl        # TLS config template
+│   └── dmq_helper.sh       # DMQ config generator
+├── wsgi.py                 # Gunicorn entry point
+├── Dockerfile              # Container image
+├── docker-compose.yml      # Coolify deployment
+├── requirements.txt        # Python deps
+└── .env.example            # Environment template
 ```
 
-### Default Credentials
+## Building & Testing Locally
 
-- **Web UI**: `admin` / `ChangeMeNow!2026#sipman`
-  - **IMPORTANT**: Change this immediately after first login via `/profile`
-- **SIP Users**: All use password `Morton@1645`
-  - Extensions: 100, 102, 430, 764, 765, 784, 783
-
-### API Usage
-
-### Login (get session)
 ```bash
-curl -sk -X POST https://sip.mrnet.work:5000/login -d "username=admin&password=ChangeMeNow!2026#sipman" -c cookies.txt
+# Build
+docker compose build
+
+# Run
+docker compose up -d
+
+# Check health
+curl http://localhost:5000/health
+
+# Login (get JWT)
+curl -X POST http://localhost:5000/api/v1/login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"admin","password":"ChangeMeNow!2026#sipman"}'
+
+# List users (replace TOKEN)
+curl http://localhost:5000/api/v1/users \
+  -H "Authorization: Bearer TOKEN"
 ```
-
-### API (JWT bearer token)
-```bash
-# First login to get token
-TOKEN=$(curl -sk -X POST https://sip.mrnet.work:5000/api/v1/login \
-  -d "username=admin&password=ChangeMeNow!2026#sipman" | jq -r .token)
-
-# Use token
-curl -sk https://sip.mrnet.work:5000/api/v1/statistics \
-  -H "Authorization: Bearer $TOKEN"
-```
-
-### Kamailio Commands (via web UI API)
-```bash
-# List active dialogs
-curl -sk https://sip.mrnet.work:5000/api/v1/kamcmd/dlg.list -H "Authorization: Bearer $TOKEN"
-
-# Core stats
-curl -sk https://sip.mrnet.work:5000/api/v1/kamcmd/core.stats -H "Authorization: Bearer $TOKEN"
-```
-
-## File Structure
-
-```
-/opt/sipman/
-├── app.py                    # Flask application
-├── requirements.txt          # Python dependencies
-├── sipman.db                 # SQLite (admin users, API tokens)
-├── templates/
-│   ├── login.html            # Login page
-│   ├── dashboard.html        # Main dashboard
-│   ├── users.html            # SIP user list
-│   ├── user_form.html        # Add/edit user form
-│   ├── domains.html          # Domain list
-│   ├── domain_form.html      # Add/edit domain form
-│   ├── gateways.html         # Gateway list
-│   ├── gateway_form.html     # Add gateway form
-│   ├── monitoring.html       # Call monitoring
-│   ├── system.html           # System status
-│   ├── profile.html          # Admin profile
-│   ├── 404.html              # Error page
-│   └── 500.html              # Error page
-├── static/                   # Static assets
-└── configs/
-    ├── kamailio.cfg          # Pure Kamailio config
-    ├── nginx-sipman.conf     # nginx reverse proxy config
-    └── sipman-web.service    # systemd service file
-```
-
-## Troubleshooting
-
-### Web UI won't start
-```bash
-journalctl -u sipman-web -n 50 --no-pager
-```
-
-### Kamailio won't reload
-```bash
-# Check config syntax
-kamcmd -f /var/run/kamailio/kamailio_ctl core.version
-
-# Check logs
-tail -f /var/log/kamailio/kamailio.log
-```
-
-### Database connection issues
-```bash
-# Test MariaDB connection
-mysql -u root -e "SELECT 1"
-
-# Check kamailio user
-mysql -u kamailio -pkamailiorw -e "SELECT count(*) FROM subscriber" kamailio
-```
-
-### SIP registration issues
-```bash
-# Check active registrations
-kamcmd -f /var/run/kamailio/kamailio_ctl ul show
-
-# Check Kamailio config
-kamcmd -f /var/run/kamailio/kamailio_ctl core.version
-```
-
-## License
-
-GPL v3 - Pure free software. No proprietary components.

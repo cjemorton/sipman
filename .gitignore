@@ -1,26 +1,37 @@
 # Python
 __pycache__/
-*.py[cod]
-*$py.class
-*.so
-.pytest_cache/
+*.pyc
+*.pyo
 .venv/
 venv/
 
 # Database files
+sipman.db
 *.db
-*.db-journal
-*.sqlite
-*.sqlite3
 
-# Environment / secrets
+# Environment
 .env
-.env.local
-*.key
-*.pem
-!configs/*.key
-!configs/*.pem
+*.env.local
 
-# Generated
-*.log
-*.pid
+# Docker
+docker-compose.override.yml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Old legacy files (no longer used in Docker architecture)
+templates/
+configs/
+deploy.sh
+migrate.sh
+rollback.sh
+setup.py
+FIX_SUMMARY.md
+ROADMAP.md

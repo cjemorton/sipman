@@ -1,0 +1,394 @@
+#!KAMAILIO
+#######
+##
+##   SipMan Backend — Kamailio Configuration (templated)
+##   All values come from environment variables via envsubst.
+##
+#######
+
+#======================================================================
+# Feature Defines
+#======================================================================
+
+#!define WITH_MYSQL
+#!define WITH_TLS
+#!define WITH_RTPENGINE
+#!define WITH_DISPATCHER
+#!define WITH_PIKE
+##!define WITH_DEBUG
+
+# Peer sync — uncomment in multi-cluster setups for live location sharing
+${WITH_DMQ_DEFINE}
+
+#======================================================================
+# String Defines
+#======================================================================
+
+#!define DBURL "mysql://${MARIADB_USER}:${MARIADB_PASS}@127.0.0.1:3306/${MARIADB_DB}"
+#!define RTPENGINE_URI "udp:${RTPENGINE_HOST}:${RTPENGINE_PORT}"
+#!define EXTERNAL_IP_ADDR "${SIP_EXTERNAL_IP}"
+#!define SIP_DOMAIN "${SIP_DOMAIN}"
+#!define SIP_PORT ${SIP_PORT:-5060}
+#!define SIPS_PORT ${SIPS_PORT:-5061}
+
+${DMQ_CONFIG}
+
+#======================================================================
+# Global Parameters
+#======================================================================
+
+debug = 2
+log_stderror = no
+log_facility = LOG_LOCAL0
+log_prefix = "[$cfg(name):$cfg(line):$ci:$rm:$rs] "
+
+fork = yes
+children = 8
+tcp_children = 4
+tcp_connection_lifetime = 3605
+http_reply_parse = yes
+server_signature = no
+auto_aliases = no
+enable_sctp = 0
+
+enable_tls = yes
+tcp_accept_no_cl = true
+tcp_rd_buf_size = 16384
+mhomed = 1
+
+alias = "${SIP_DOMAIN}"
+
+# Listen on all interfaces; advertise external IP for NAT traversal
+listen = udp:0.0.0.0:${SIP_PORT:-5060} advertise EXTERNAL_IP_ADDR:${SIP_PORT:-5060}
+listen = tcp:0.0.0.0:${SIP_PORT:-5060} advertise EXTERNAL_IP_ADDR:${SIP_PORT:-5060}
+listen = tls:0.0.0.0:${SIPS_PORT:-5061} advertise EXTERNAL_IP_ADDR:${SIPS_PORT:-5061}
+
+# DMQ listen address (for peer-to-peer location sync)
+${DMQ_LISTEN}
+
+#======================================================================
+# Module Loading
+#======================================================================
+
+mpath = "/usr/lib/x86_64-linux-gnu/kamailio/modules/"
+
+loadmodule "db_mysql.so"
+loadmodule "kex.so"
+loadmodule "corex.so"
+loadmodule "tm.so"
+loadmodule "tmx.so"
+loadmodule "sl.so"
+loadmodule "rr.so"
+loadmodule "path.so"
+loadmodule "pv.so"
+loadmodule "maxfwd.so"
+loadmodule "usrloc.so"
+loadmodule "registrar.so"
+loadmodule "textops.so"
+loadmodule "textopsx.so"
+loadmodule "siputils.so"
+loadmodule "xlog.so"
+loadmodule "sanity.so"
+loadmodule "ctl.so"
+loadmodule "cfg_rpc.so"
+loadmodule "acc.so"
+loadmodule "xhttp.so"
+loadmodule "jsonrpcs.so"
+loadmodule "ipops.so"
+loadmodule "sdpops.so"
+loadmodule "nathelper.so"
+loadmodule "permissions.so"
+loadmodule "domain.so"
+loadmodule "dialog.so"
+loadmodule "auth.so"
+loadmodule "auth_db.so"
+loadmodule "htable.so"
+loadmodule "rtpengine.so"
+loadmodule "dispatcher.so"
+loadmodule "tls.so"
+loadmodule "pike.so"
+${DMQ_MODULES}
+
+#======================================================================
+# Module Parameters
+#======================================================================
+
+# jsonrpcs (control interface for web UI/API)
+modparam("jsonrpcs", "pretty_format", 1)
+modparam("jsonrpcs", "fifo_name", "/var/run/kamailio/kamailio_rpc.fifo")
+modparam("jsonrpcs", "transport", 3)
+
+# ctl (control interface)
+modparam("ctl", "binrpc", "unix:/var/run/kamailio/kamailio_ctl")
+
+# tm (transaction module)
+modparam("tm", "failure_reply_mode", 3)
+modparam("tm", "fr_timer", 30000)
+modparam("tm", "fr_inv_timer", 60000)
+
+# rr (record routing)
+modparam("rr", "enable_full_lr", 0)
+modparam("rr", "append_fromtag", 1)
+
+# registrar
+modparam("registrar", "method_filtering", 1)
+modparam("registrar", "max_contacts", 10)
+modparam("registrar", "max_expires", 3600)
+modparam("registrar", "default_expires", 600)
+modparam("registrar", "received_avp", "$avp(RECEIVED)")
+
+# auth_db
+modparam("auth_db", "db_url", DBURL)
+modparam("auth_db", "calculate_ha1", yes)
+modparam("auth_db", "password_column", "password")
+modparam("auth_db", "use_domain", 1)
+
+# permissions
+modparam("permissions", "db_url", DBURL)
+modparam("permissions", "db_mode", 1)
+modparam("permissions", "reload_delta", 1)
+
+# usrloc — DMQ-synced location table for multi-cluster
+modparam("usrloc", "db_url", DBURL)
+modparam("usrloc", "db_mode", 3)
+modparam("usrloc", "use_domain", 1)
+modparam("usrloc", "handle_lost_tcp", 1)
+modparam("usrloc", "nat_bflag", 1)
+${DMQ_USRLOC_PARAMS}
+
+# nathelper
+modparam("nathelper", "natping_interval", 60)
+modparam("nathelper", "ping_nated_only", 1)
+modparam("nathelper", "sipping_bflag", 1)
+modparam("nathelper", "sipping_from", "sip:pinger@${SIP_DOMAIN}")
+modparam("nathelper", "received_avp", "$avp(RECEIVED)")
+
+# domain
+modparam("domain", "db_url", DBURL)
+modparam("domain", "register_myself", 1)
+
+# htable / pike (rate limiting)
+modparam("htable", "htable", "ipban=>size=8;autoexpire=300;")
+modparam("pike", "sampling_time_unit", 2)
+modparam("pike", "reqs_density_per_unit", 20)
+modparam("pike", "remove_latency", 30)
+
+# acc (accounting)
+modparam("acc", "early_media", 0)
+modparam("acc", "report_ack", 0)
+modparam("acc", "report_cancels", 0)
+modparam("acc", "detect_direction", 0)
+modparam("acc", "log_flag", 0)
+modparam("acc", "log_missed_flag", 1)
+modparam("acc", "db_flag", 0)
+modparam("acc", "db_missed_flag", 1)
+modparam("acc", "db_url", DBURL)
+modparam("acc", "db_extra", "src_user=$fU;src_domain=$fd;src_ip=$si;dst_user=$rU;dst_domain=$rd")
+
+# rtpengine
+modparam("rtpengine", "rtpengine_sock", RTPENGINE_URI)
+modparam("rtpengine", "ping_mode", 1)
+modparam("rtpengine", "rtpengine_disable_tout", 60)
+modparam("rtpengine", "rtpengine_retr", 3)
+modparam("rtpengine", "hash_table_tout", 60)
+
+# dispatcher
+modparam("dispatcher", "db_url", DBURL)
+modparam("dispatcher", "table_name", "dispatcher")
+modparam("dispatcher", "flags", 2)
+modparam("dispatcher", "ds_ping_method", "OPTIONS")
+modparam("dispatcher", "ds_ping_interval", 30)
+modparam("dispatcher", "ds_probing_mode", 3)
+modparam("dispatcher", "ds_probing_threshold", 3)
+modparam("dispatcher", "ds_inactive_threshold", 2)
+modparam("dispatcher", "reload_delta", 1)
+
+# tls
+modparam("tls", "config", "/etc/kamailio/tls.cfg")
+modparam("tls", "tls_force_run", 1)
+
+# dialog
+modparam("dialog", "db_url", DBURL)
+modparam("dialog", "db_mode", 0)
+modparam("dialog", "enable_stats", 1)
+modparam("dialog", "hash_size", 4096)
+modparam("dialog", "detect_spirals", 1)
+modparam("dialog", "track_cseq_updates", 1)
+modparam("dialog", "default_timeout", 21600)
+modparam("dialog", "early_timeout", 300)
+modparam("dialog", "noack_timeout", 180)
+modparam("dialog", "dlg_match_mode", 1)
+modparam("dialog", "send_bye", 0)
+modparam("dialog", "timeout_avp", "$dlg_ctx(timeout)")
+
+${DMQ_PARAMS}
+
+#======================================================================
+# XHTTP event route (required by jsonrpcs)
+#======================================================================
+
+event_route[xhttp:request] {
+    jsonrpc_exec("");
+}
+
+
+#======================================================================
+# Request Routing Logic
+#======================================================================
+
+request_route {
+
+    # Initial checks
+    set_reply_no_connect();
+
+    if (!mf_process_maxfwd_header("10")) {
+        send_reply("483", "Too Many Hops");
+        exit;
+    }
+
+    if (!sanity_check()) {
+        send_reply("400", "Bad Request");
+        exit;
+    }
+
+    if (t_precheck_trans()) {
+        t_check_trans();
+        exit;
+    }
+    if (!t_check_trans()) {
+        t_newtran();
+    }
+
+    # Rate limiting via pike
+    if (!pike_check_req()) {
+        xlog("L_WARN", "[$ci] Rate limit exceeded for $si\n");
+        send_reply("503", "Service Unavailable");
+        exit;
+    }
+
+    # NAT detection
+    if (nat_uac_test("3")) {
+        force_rport();
+    }
+    if (nat_uac_test("19")) {
+        set_contact_alias();
+    }
+    if (is_method("REGISTER") && !isflagset(1)) {
+        if (nat_uac_test("22")) {
+            setflag(1);
+        }
+    }
+
+    # Handle CANCEL
+    if (is_method("CANCEL")) {
+        if (t_check_trans()) {
+            t_relay();
+        }
+        if (!rtpengine_delete()) {
+            xlog("L_WARN", "[$ci] rtpengine_delete() failed on CANCEL\n");
+        }
+        exit;
+    }
+
+    # Handle requests within SIP dialogs
+    if (has_totag()) {
+        t_relay();
+        exit;
+    }
+
+    # Handle REGISTER
+    if (is_method("REGISTER")) {
+        if (!auth_check("$fd", "subscriber", "3")) {
+            auth_challenge("$fd", "0");
+            exit;
+        }
+        if (!save("location")) {
+            exit;
+        }
+        exit;
+    }
+
+    # Handle DMQ messages (peer sync)
+    ${DMQ_ROUTE}
+
+    # Handle INVITE
+    if (is_method("INVITE")) {
+        if (uri == myself) {
+            # Local user to local user call
+            if (!lookup("location")) {
+                send_reply("404", "User Not Found");
+                exit;
+            }
+            if (has_body("application/sdp")) {
+                rtpengine_offer();
+            }
+            t_on_reply("RTP_REPLY");
+            t_relay();
+            exit;
+        } else {
+            # External call - use dispatcher
+            if (!ds_select_dst("1", "4")) {
+                xlog("L_WARN", "[$ci] No destination found in dispatcher set 1\n");
+                send_reply("404", "No Route");
+                exit;
+            }
+            $du = $ds;
+            xlog("L_INFO", "[$ci] Routing to: $du\n");
+            if (has_body("application/sdp")) {
+                rtpengine_offer("replace-origin");
+            }
+            t_on_reply("RTP_REPLY");
+            t_relay();
+            exit;
+        }
+    }
+
+    # Default relay
+    t_relay();
+}
+
+
+#======================================================================
+# Reply Routes
+#======================================================================
+
+onreply_route[RTP_REPLY] {
+    if (is_method("INVITE") && has_body("application/sdp")) {
+        rtpengine_offer();
+    }
+    return;
+}
+
+
+#======================================================================
+# Failure Routes
+#======================================================================
+
+failure_route[FAIL] {
+    if (is_method("INVITE")) {
+        if (t_check_status("503") || t_check_status("404")) {
+            if (ds_next_domain()) {
+                $du = $ds;
+                t_on_reply("RTP_REPLY");
+                t_relay();
+                exit;
+            }
+        }
+    }
+    return;
+}
+
+
+#======================================================================
+# Event Routes
+#======================================================================
+
+event_route[kamailio:startup] {
+    xlog("L_WARN", "SipMan Kamailio started — cluster ${CLUSTER_ID:-primary}\n");
+}
+
+event_route[kamailio:shutdown] {
+    xlog("L_WARN", "SipMan Kamailio shutting down\n");
+}
+
+${DMQ_EVENT_ROUTE}

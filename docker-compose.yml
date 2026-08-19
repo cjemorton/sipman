@@ -1,0 +1,79 @@
+# ============================================================
+# SipMan Backend — Docker Compose for Coolify Deployment
+# ============================================================
+# In Coolify:
+#   1. Create a new resource → Docker Compose
+#   2. Paste this file (or link the repo)
+#   3. Set environment variables in the Coolify UI
+#   4. Deploy
+#
+# For multi-cluster: deploy multiple instances with different
+# CLUSTER_ID values and point PEER_NODES at each other.
+# ============================================================
+
+services:
+  sipman:
+    build: .
+    image: sipman-backend:latest
+    container_name: sipman-backend
+    restart: unless-stopped
+
+    # ---- Ports ----
+    # 5000 = REST API (proxy this through your reverse proxy / Coolify)
+    # 5060 = SIP (UDP+TCP) — must be exposed directly to the internet
+    # 5061 = SIPS/TLS
+    ports:
+      - "5000:5000"     # REST API
+      - "5060:5060/udp"  # SIP UDP
+      - "5060:5060/tcp"  # SIP TCP
+      - "5061:5061/tcp"  # SIPS/TLS
+      # RTPEngine media ports (10000-20000 UDP by default)
+      - "10000-20000:10000-20000/udp"
+
+    # ---- Environment (override in Coolify UI or .env file) ----
+    environment:
+      - CLUSTER_ID=${CLUSTER_ID:-primary}
+      - CLUSTER_NAME=${CLUSTER_NAME:-Primary SIP Cluster}
+      - SIP_DOMAIN=${SIP_DOMAIN:-sip.mrnet.work}
+      - SIP_EXTERNAL_IP=${SIP_EXTERNAL_IP:-127.0.0.1}
+      - SIP_PORT=${SIP_PORT:-5060}
+      - SIPS_PORT=${SIPS_PORT:-5061}
+      - MARIADB_DB=${MARIADB_DB:-kamailio}
+      - MARIADB_USER=${MARIADB_USER:-kamailio}
+      - MARIADB_PASS=${MARIADB_PASS:-kamailio}
+      - MARIADB_ROOT_PASS=${MARIADB_ROOT_PASS:-}
+      - RTPENGINE_HOST=${RTPENGINE_HOST:-127.0.0.1}
+      - RTPENGINE_PORT=${RTPENGINE_PORT:-7722}
+      - RTPENGINE_INTERFACE=${RTPENGINE_INTERFACE:-0.0.0.0}
+      - SIPMAN_ADMIN_USER=${SIPMAN_ADMIN_USER:-admin}
+      - SIPMAN_ADMIN_PASS=${SIPMAN_ADMIN_PASS:-ChangeMeNow!2026#sipman}
+      - SIPMAN_JWT_SECRET=${SIPMAN_JWT_SECRET:-}
+      - PEER_NODES=${PEER_NODES:-}
+      - PEER_SYNC_SECRET=${PEER_SYNC_SECRET:-}
+      - PEER_SYNC_ENABLED=${PEER_SYNC_ENABLED:-false}
+      - FLASK_SECRET_KEY=${FLASK_SECRET_KEY:-}
+      - CORS_ORIGINS=${CORS_ORIGINS:-*}
+      - CLUSTER_BACKEND_URL=${CLUSTER_BACKEND_URL:-http://localhost:5000}
+
+    # ---- Volumes (persistent data) ----
+    volumes:
+      - sipman-mysql:/var/lib/mysql
+      - sipman-data:/data
+
+    # ---- Health check ----
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+    # ---- Capabilities (RTPEngine needs NET_ADMIN for kernel module) ----
+    cap_add:
+      - NET_ADMIN
+    # Use host network for RTP if needed (uncomment for production SIP):
+    # network_mode: host
+
+volumes:
+  sipman-mysql:
+  sipman-data:
