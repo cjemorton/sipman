@@ -18,18 +18,18 @@ chown -R kamailio:kamailio /var/run/kamailio 2>/dev/null || true
 # ---- 1. Initialize MariaDB data dir if empty ----
 if [ ! -d "/var/lib/mysql/mysql" ]; then
     echo "[SIPMAN] Initializing MariaDB data directory..."
-    mysql_install_db --user=mysql --datadir=/var/lib/mysql 2>&1 | tail -5
+    mariadb-install-db --user=mysql --datadir=/var/lib/mysql 2>&1 | tail -5
 fi
 
 # ---- 2. Start MariaDB (temporary, for schema init) ----
 echo "[SIPMAN] Starting MariaDB..."
-mysqld_safe --user=mysql --datadir=/var/lib/mysql --skip-networking=false &
+mariadbd-safe --user=mysql --datadir=/var/lib/mysql --skip-networking=false &
 MYSQL_PID=$!
 sleep 3
 
 # Wait for MariaDB to be ready
 for i in $(seq 1 30); do
-    if mysqladmin ping --silent 2>/dev/null; then
+    if mariadb-admin ping --silent 2>/dev/null; then
         echo "[SIPMAN] MariaDB is ready."
         break
     fi
@@ -44,21 +44,21 @@ MYSQL_PASS="${MARIADB_PASS:-kamailio}"
 
 # Set root password if provided, else disable remote root
 if [ -n "$MYSQL_ROOT_PASS" ]; then
-    mysql -u root -e "ALTER USER 'root'@'localhost' IDENTIFIED BY '${MYSQL_ROOT_PASS}';" 2>/dev/null || true
+    mariadb -u root -e "ALTER USER 'root'@'localhost' IDENTIFIED BY '${MYSQL_ROOT_PASS}';" 2>/dev/null || true
     ROOT_FLAG="-p${MYSQL_ROOT_PASS}"
 else
     ROOT_FLAG=""
 fi
 
 # Create database
-mysql -u root $ROOT_FLAG -e "CREATE DATABASE IF NOT EXISTS \`${MYSQL_DB}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;" 2>/dev/null || true
+mariadb -u root $ROOT_FLAG -e "CREATE DATABASE IF NOT EXISTS \`${MYSQL_DB}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;" 2>/dev/null || true
 
 # Create Kamailio user
-mysql -u root $ROOT_FLAG -e "CREATE USER IF NOT EXISTS '${MYSQL_USER}'@'127.0.0.1' IDENTIFIED BY '${MYSQL_PASS}';" 2>/dev/null || true
-mysql -u root $ROOT_FLAG -e "CREATE USER IF NOT EXISTS '${MYSQL_USER}'@'localhost' IDENTIFIED BY '${MYSQL_PASS}';" 2>/dev/null || true
-mysql -u root $ROOT_FLAG -e "GRANT ALL PRIVILEGES ON \`${MYSQL_DB}\`.* TO '${MYSQL_USER}'@'127.0.0.1';" 2>/dev/null || true
-mysql -u root $ROOT_FLAG -e "GRANT ALL PRIVILEGES ON \`${MYSQL_DB}\`.* TO '${MYSQL_USER}'@'localhost';" 2>/dev/null || true
-mysql -u root $ROOT_FLAG -e "FLUSH PRIVILEGES;" 2>/dev/null || true
+mariadb -u root $ROOT_FLAG -e "CREATE USER IF NOT EXISTS '${MYSQL_USER}'@'127.0.0.1' IDENTIFIED BY '${MYSQL_PASS}';" 2>/dev/null || true
+mariadb -u root $ROOT_FLAG -e "CREATE USER IF NOT EXISTS '${MYSQL_USER}'@'localhost' IDENTIFIED BY '${MYSQL_PASS}';" 2>/dev/null || true
+mariadb -u root $ROOT_FLAG -e "GRANT ALL PRIVILEGES ON \`${MYSQL_DB}\`.* TO '${MYSQL_USER}'@'127.0.0.1';" 2>/dev/null || true
+mariadb -u root $ROOT_FLAG -e "GRANT ALL PRIVILEGES ON \`${MYSQL_DB}\`.* TO '${MYSQL_USER}'@'localhost';" 2>/dev/null || true
+mariadb -u root $ROOT_FLAG -e "FLUSH PRIVILEGES;" 2>/dev/null || true
 
 # ---- 4. Load Kamailio schema ----
 if [ ! -f "/var/lib/mysql/.kamailio_schema_loaded" ]; then
@@ -66,10 +66,10 @@ if [ ! -f "/var/lib/mysql/.kamailio_schema_loaded" ]; then
     # Use kamailio's built-in schema files
     if [ -d "/usr/share/kamailio/mysql" ]; then
         for f in /usr/share/kamailio/mysql/*.sql; do
-            mysql -u root $ROOT_FLAG "${MYSQL_DB}" < "$f" 2>/dev/null || true
+            mariadb -u root $ROOT_FLAG "${MYSQL_DB}" < "$f" 2>/dev/null || true
         done
         # Also create the SIPMAN-specific tables if not in default schema
-        mysql -u root $ROOT_FLAG "${MYSQL_DB}" <<'SQL'
+        mariadb -u root $ROOT_FLAG "${MYSQL_DB}" <<'SQL'
 -- Ensure sip_trace table exists (for call tracing)
 CREATE TABLE IF NOT EXISTS sip_trace (
     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -112,4 +112,4 @@ fi
 
 # ---- 8. Start supervisord (manages all processes) ----
 echo "[SIPMAN] Starting supervisord..."
-exec /usr/bin/supervisord -c /etc/supervisor/conf.d/supervisord.conf
+exec /usr/bin/supervisord -c /etc/supervisord.conf
