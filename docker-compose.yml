@@ -13,8 +13,13 @@
 
 services:
   sipman:
-    build: .
-    image: sipman-backend:latest
+    # Prebuilt image from GitHub Actions → GitHub Container Registry.
+    # The deployment server (micro-87-224, 764MB RAM) cannot build this
+    # image locally (kamailio + mariadb + rtpengine + python3) without
+    # running out of memory. GitHub Actions builds and pushes here.
+    # For local development, comment out `image:` and uncomment `build:`.
+    image: ghcr.io/cjemorton/sipman:latest
+    # build: .
     container_name: sipman-backend
     restart: unless-stopped
 
