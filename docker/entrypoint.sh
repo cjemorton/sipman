@@ -124,7 +124,14 @@ KAMAILIO_ENVVARS='${CLUSTER_ID} ${DMQ_CONFIG} ${DMQ_EVENT_ROUTE} ${DMQ_LISTEN} $
 envsubst "$KAMAILIO_ENVVARS" < /etc/kamailio/kamailio.cfg.tmpl > /etc/kamailio/kamailio.cfg
 envsubst < /etc/kamailio/tls.cfg.tmpl > /etc/kamailio/tls.cfg 2>/dev/null || true
 
-# ---- 6. Stop temporary MariaDB (supervisord will manage it) ----
+# ---- 6. Copy MariaDB config (memory-optimized) ----
+if [ -f /etc/my.cnf.d/sipman.cnf ]; then
+    echo "[SIPMAN] MariaDB config already in place."
+else
+    echo "[SIPMAN] WARNING: sipman.cnf not found — MariaDB may use default (high) memory settings."
+fi
+
+# ---- 6a. Stop temporary MariaDB (supervisord will manage it) ----
 echo "[SIPMAN] Stopping temporary MariaDB..."
 # Use a clean shutdown so the mariadbd child fully exits; a bare `kill` of
 # mariadbd-safe leaves the mariadbd daemon running, which makes the supervised

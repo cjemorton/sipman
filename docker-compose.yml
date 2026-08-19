@@ -23,19 +23,16 @@ services:
     container_name: sipman-backend
     restart: unless-stopped
 
-    # ---- Ports ----
-    # 5000 = REST API (proxy this through your reverse proxy / Coolify)
-    # 5060 = SIP (UDP+TCP) — must be exposed directly to the internet
-    # 5061 = SIPS/TLS
-    ports:
-      - "5000:5000"     # REST API
-      - "5060:5060/udp"  # SIP UDP
-      - "5060:5060/tcp"  # SIP TCP
-      - "5061:5061/tcp"  # SIPS/TLS
-      # NOTE: RTPEngine media ports (10000-20000 UDP) are NOT mapped here.
-      # Mapping 10,001 ports spawns 10,001 docker-proxy processes, which
-      # exhausts memory on small VMs. For production SIP, use network_mode:
-      # host instead (see below), or map a smaller targeted range.
+    # ---- Network Mode: host ----
+    # SIP/RTP servers require host networking for optimal performance:
+    #   - Zero docker-proxy overhead (no per-port proxy processes)
+    #   - RTPEngine binds directly to host ports (dynamic RTP allocation)
+    #   - No NAT/bridge latency for real-time media
+    #   - Industry standard for Kamailio/RTPEngine/Asterisk/FreeSWITCH
+    # NOTE: port mappings are ignored in host mode — all container ports
+    # are directly accessible on the host. Ensure host firewall allows:
+    #   5000/tcp (API), 5060/udp+tcp (SIP), 5061/tcp (SIPS), 10000-20000/udp (RTP)
+    network_mode: host
 
     # ---- Environment (override in Coolify UI or .env file) ----
     environment:
@@ -63,6 +60,7 @@ services:
       - CLUSTER_BACKEND_URL=${CLUSTER_BACKEND_URL:-http://localhost:5000}
 
     # ---- Volumes (persistent data) ----
+    # NOTE: With network_mode: host, named volumes still work.
     volumes:
       - sipman-mysql:/var/lib/mysql
       - sipman-data:/data
@@ -74,12 +72,6 @@ services:
       timeout: 10s
       retries: 3
       start_period: 30s
-
-    # ---- Capabilities (RTPEngine needs NET_ADMIN for kernel module) ----
-    cap_add:
-      - NET_ADMIN
-    # Use host network for RTP if needed (uncomment for production SIP):
-    # network_mode: host
 
 volumes:
   sipman-mysql:

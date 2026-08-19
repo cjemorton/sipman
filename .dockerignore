@@ -1,0 +1,38 @@
+# Files/dirs excluded from Docker build context
+# Reduces build context size and prevents cache-busting from non-essential files
+
+.git
+.gitignore
+.github
+__pycache__
+**/__pycache__
+*.pyc
+*.pyo
+*.egg-info
+.venv
+venv
+env
+
+# Documentation
+README.md
+ROADMAP.md
+FIX_SUMMARY.md
+
+# Scripts (not needed inside container)
+deploy.sh
+migrate.sh
+rollback.sh
+setup.py
+
+# Local dev database
+sipman.db
+
+# Docker compose (used by Coolify, not needed in image)
+docker-compose.yml
+
+# Environment files
+.env
+.env.example
+
+# Templates (not used by the container)
+templates/

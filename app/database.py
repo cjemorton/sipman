@@ -1,7 +1,7 @@
 """
 Database layer.
 - SQLite for admin users, API tokens, settings, peer registry.
-- MariaDB (via mysql.connector) for Kamailio's data tables.
+- MariaDB (via PyMySQL) for Kamailio's data tables.
 """
 
 import os
@@ -12,7 +12,7 @@ import sys
 
 from werkzeug.security import generate_password_hash
 from flask import current_app
-import mysql.connector
+import pymysql
 
 from app.config import Config
 
@@ -203,16 +203,17 @@ def get_mariadb():
     last_error = None
     for attempt in range(Config.DB_RETRY_ATTEMPTS):
         try:
-            conn = mysql.connector.connect(
+            conn = pymysql.connect(
                 host=Config.MARIADB_HOST,
                 port=Config.MARIADB_PORT,
                 user=Config.MARIADB_USER,
                 password=Config.MARIADB_PASS,
                 database=Config.MARIADB_DB,
                 charset='utf8mb4',
-                connection_timeout=Config.DB_CONNECTION_TIMEOUT
+                connect_timeout=Config.DB_CONNECTION_TIMEOUT,
+                cursorclass=pymysql.cursors.DictCursor
             )
-            if conn.is_connected():
+            if conn.open:
                 return conn
             conn.close()
             raise Exception("Connection not established")
@@ -247,7 +248,7 @@ def db_query(query, params=None):
             if conn is None:
                 time.sleep(2 ** attempt)
                 continue
-            cur = conn.cursor(dictionary=True)
+            cur = conn.cursor()
             cur.execute(query, params or ())
             rows = cur.fetchall()
             conn.close()
