@@ -18,10 +18,16 @@ chown -R kamailio:kamailio /var/run/kamailio 2>/dev/null || true
 # ---- 0a. Resolve RTPEngine interface (rtpengine rejects 0.0.0.0) ----
 # RTPEngine needs a real local IP for its --interface. If the operator left
 # RTPENGINE_INTERFACE at the default 0.0.0.0 (or empty), auto-detect the
-# container's primary IPv4 address so rtpengine starts out-of-the-box.
+# primary IPv4 address.  In network_mode: host, hostname -i may fail if
+# the hostname has no DNS entry, so we fall back to iproute2.
 if [ -z "${RTPENGINE_INTERFACE:-}" ] || [ "${RTPENGINE_INTERFACE}" = "0.0.0.0" ]; then
     DETECTED_IP=$(hostname -i 2>/dev/null | awk '{print $1}')
-    if [ -n "$DETECTED_IP" ]; then
+    if [ -z "$DETECTED_IP" ] || [ "$DETECTED_IP" = "127.0.0.1" ]; then
+        # hostname -i failed (no DNS for hostname) — use iproute2
+        DETECTED_IP=$(ip -4 -o addr show scope global 2>/dev/null \
+            | awk '{print $4}' | cut -d/ -f1 | head -1)
+    fi
+    if [ -n "$DETECTED_IP" ] && [ "$DETECTED_IP" != "127.0.0.1" ]; then
         export RTPENGINE_INTERFACE="$DETECTED_IP"
         echo "[SIPMAN] RTPENGINE_INTERFACE auto-detected: $RTPENGINE_INTERFACE"
     else
@@ -75,15 +81,21 @@ mariadb -u root $ROOT_FLAG -e "GRANT ALL PRIVILEGES ON \`${MYSQL_DB}\`.* TO '${M
 mariadb -u root $ROOT_FLAG -e "FLUSH PRIVILEGES;" 2>/dev/null || true
 
 # ---- 4. Load Kamailio schema ----
-if [ ! -f "/var/lib/mysql/.kamailio_schema_loaded" ]; then
-    echo "[SIPMAN] Loading Kamailio database schema..."
-    # Use kamailio's built-in schema files
-    if [ -d "/usr/share/kamailio/mysql" ]; then
-        for f in /usr/share/kamailio/mysql/*.sql; do
-            mariadb -u root $ROOT_FLAG "${MYSQL_DB}" < "$f" 2>/dev/null || true
-        done
-        # Also create the SIPMAN-specific tables if not in default schema
-        mariadb -u root $ROOT_FLAG "${MYSQL_DB}" <<'SQL'
+# Always check and fix schema — the volume may persist across container
+# restarts and some SQL files use CREATE TABLE (no IF NOT EXISTS) which can
+# fail silently if tables already exist, leaving version-table entries missing.
+SCHEMA_LOADED=0
+if [ -f "/var/lib/mysql/.kamailio_schema_loaded" ]; then
+    SCHEMA_LOADED=1
+fi
+
+echo "[SIPMAN] Loading Kamailio database schema..."
+if [ -d "/usr/share/kamailio/mysql" ]; then
+    for f in /usr/share/kamailio/mysql/*.sql; do
+        mariadb -u root $ROOT_FLAG "${MYSQL_DB}" < "$f" 2>/dev/null || true
+    done
+    # Also create the SIPMAN-specific tables if not in default schema
+    mariadb -u root $ROOT_FLAG "${MYSQL_DB}" <<'SQL'
 -- Ensure sip_trace table exists (for call tracing)
 CREATE TABLE IF NOT EXISTS sip_trace (
     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -98,11 +110,82 @@ CREATE TABLE IF NOT EXISTS sip_trace (
     msg TEXT
 ) ENGINE=InnoDB;
 SQL
-        touch /var/lib/mysql/.kamailio_schema_loaded
-        echo "[SIPMAN] Kamailio schema loaded."
-    else
-        echo "[SIPMAN] WARNING: Kamailio MySQL schema not found at /usr/share/kamailio/mysql"
-    fi
+    # Fix any missing version-table entries. Kamailio modules check the
+    # version table at init time and crash if the expected version is absent.
+    # The CREATE TABLE statements in the schema files may have failed on a
+    # pre-existing volume, but the INSERT INTO version rows failed too.
+    # Re-run the version INSERTs with INSERT IGNORE to fill any gaps.
+    mariadb -u root $ROOT_FLAG "${MYSQL_DB}" <<'SQL'
+INSERT IGNORE INTO version (table_name, table_version) VALUES
+    ('acc','5'),
+    ('address','6'),
+    ('aliases','8'),
+    ('carrierfailureroute','2'),
+    ('carrierroute','3'),
+    ('carrierroute','3'),
+    ('cpl','1'),
+    ('dbaliases','1'),
+    ('dialog','5'),
+    ('dialplan','2'),
+    ('dispatcher','4'),
+    ('domain','2'),
+    ('domainpolicy','2'),
+    ('dr_gateways','5'),
+    ('dr_groups','2'),
+    ('dr_gw_lists','1'),
+    ('dr_rules','3'),
+    ('globalblocklist','1'),
+    ('grp','2'),
+    ('htable','1'),
+    ('imc_members','1'),
+    ('imc_rooms','1'),
+    ('lcr_gw','3'),
+    ('lcr_rule','3'),
+    ('lcr_rule_target','1'),
+    ('location','9'),
+    ('location_attrs','1'),
+    ('matrix','1'),
+    ('missed_calls','3'),
+    ('mohqcalls','1'),
+    ('mohqueues','1'),
+    ('mtree','1'),
+    ('mtrees','1'),
+    ('nds_trusted_domains','1'),
+    ('pdt','1'),
+    ('pl_pipes','1'),
+    ('presentity','4'),
+    ('purplemap','1'),
+    ('rls_presentity','1'),
+    ('rls_watchers','3'),
+    ('rtpengine','1'),
+    ('rtpproxy','1'),
+    ('sca_subscriptions','1'),
+    ('secfilter','1'),
+    ('silo','6'),
+    ('sip_trace','1'),
+    ('speed_dial','2'),
+    ('subscriber','7'),
+    ('topos_d','2'),
+    ('topos_t','2'),
+    ('trusted','6'),
+    ('uacreg','5'),
+    ('uid_credentials','7'),
+    ('uid_domain','2'),
+    ('uid_domain_attrs','1'),
+    ('uid_global_attrs','1'),
+    ('uid_uri','3'),
+    ('uid_uri_attrs','2'),
+    ('uid_user_attrs','3'),
+    ('uri','1'),
+    ('userblocklist','1'),
+    ('usr_preferences','2'),
+    ('version','1'),
+    ('xcap','4');
+SQL
+    touch /var/lib/mysql/.kamailio_schema_loaded
+    echo "[SIPMAN] Kamailio schema loaded."
+else
+    echo "[SIPMAN] WARNING: Kamailio MySQL schema not found at /usr/share/kamailio/mysql"
 fi
 
 # ---- 5. Render Kamailio config from template ----
@@ -156,6 +239,10 @@ if [ ! -f /etc/kamailio/tls/kamailio.crt ]; then
         -out /etc/kamailio/tls/kamailio.crt -days 3650 -nodes \
         -subj "/CN=${SIP_DOMAIN:-sip.mrnet.work}" 2>/dev/null
 fi
+# Kamailio runs as user kamailio; ensure it can read the TLS key/cert
+chown kamailio:kamailio /etc/kamailio/tls/kamailio.key /etc/kamailio/tls/kamailio.crt 2>/dev/null || true
+chmod 644 /etc/kamailio/tls/kamailio.crt 2>/dev/null || true
+chmod 640 /etc/kamailio/tls/kamailio.key 2>/dev/null || true
 
 # ---- 8. Start supervisord (manages all processes) ----
 echo "[SIPMAN] Starting supervisord..."

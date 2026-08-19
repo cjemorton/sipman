@@ -17,9 +17,9 @@ RUN apk add --no-cache python3 py3-pip py3-virtualenv
 
 WORKDIR /tmp
 COPY requirements.txt .
-RUN python3 -m venv /venv && \
-    /venv/bin/pip install --no-cache-dir --upgrade pip && \
-    /venv/bin/pip install --no-cache-dir -r requirements.txt
+RUN python3 -m venv /opt/venv && \
+    /opt/venv/bin/pip install --no-cache-dir --upgrade pip && \
+    /opt/venv/bin/pip install --no-cache-dir -r requirements.txt
 
 # ============================================================
 # Stage 2: Final image
@@ -55,7 +55,7 @@ RUN apk add --no-cache \
     && rm -rf /var/cache/apk/*
 
 # ---- Copy Python deps from builder stage ----
-COPY --from=builder /venv /opt/venv
+COPY --from=builder /opt/venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 ENV PYTHONPATH="/opt/venv"
 
