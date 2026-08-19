@@ -13,12 +13,13 @@
 # ---- Stage 1: Python builder ----
 FROM alpine:3.20 AS builder
 
-RUN apk add --no-cache python3 py3-pip
+RUN apk add --no-cache python3 py3-pip py3-virtualenv
 
 WORKDIR /tmp
 COPY requirements.txt .
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir --target=/venv -r requirements.txt
+RUN python3 -m venv /venv && \
+    /venv/bin/pip install --no-cache-dir --upgrade pip && \
+    /venv/bin/pip install --no-cache-dir -r requirements.txt
 
 # ============================================================
 # Stage 2: Final image
