@@ -32,8 +32,10 @@ services:
       - "5060:5060/udp"  # SIP UDP
       - "5060:5060/tcp"  # SIP TCP
       - "5061:5061/tcp"  # SIPS/TLS
-      # RTPEngine media ports (10000-20000 UDP by default)
-      - "10000-20000:10000-20000/udp"
+      # NOTE: RTPEngine media ports (10000-20000 UDP) are NOT mapped here.
+      # Mapping 10,001 ports spawns 10,001 docker-proxy processes, which
+      # exhausts memory on small VMs. For production SIP, use network_mode:
+      # host instead (see below), or map a smaller targeted range.
 
     # ---- Environment (override in Coolify UI or .env file) ----
     environment:
