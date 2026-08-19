@@ -9,8 +9,8 @@ FROM debian:12-slim
 ENV DEBIAN_FRONTEND=noninteractive
 
 # ---- Install system packages ----
+# NOTE: No inline comments inside RUN continuation blocks — BuildKit breaks on them.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    # Kamailio + modules
     kamailio \
     kamailio-mysql-modules \
     kamailio-tls-modules \
@@ -19,14 +19,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     kamailio-extra-modules \
     kamailio-dmq-modules \
     kamailio-utils-modules \
-    # RTPEngine
     rtpengine \
-    # MariaDB
     mariadb-server \
     mariadb-client \
-    # Supervisor
     supervisor \
-    # Utility packages
     gettext-base \
     openssl \
     curl \
