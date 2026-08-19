@@ -43,13 +43,16 @@ WITH_DMQ_DEFINE="#!define WITH_DMQ"
 DMQ_CONFIG="# DMQ peer nodes (comma-separated)"
 DMQ_LISTEN="listen = tcp:0.0.0.0:5060 advertise EXTERNAL_IP_ADDR:5060"
 DMQ_MODULES='loadmodule "dmq.so"
-loadmodule "dmqusrloc.so"'
+loadmodule "dmq_usrloc.so"'
 DMQ_PARAMS='modparam("dmq", "server_address", "sip:${SIP_DOMAIN}:${SIP_PORT:-5060}")
 modparam("dmq", "notification_address", "sip:${SIP_DOMAIN}:${SIP_PORT:-5060}")
 modparam("dmq", "num_workers", 4)
-modparam("dmqusrloc", "enable", 1)'
-DMQ_USRLOC_PARAMS="modparam(\"usrloc\", \"db_use_ruri\", 1)"
-DMQ_ROUTE="if (\$rm == \"KDMQ\") { dmq_handle_message(); exit; }"
+modparam("dmq_usrloc", "enable", 1)'
+# db_use_ruri modparam was removed in Kamailio 5.6+ (usrloc handles RURI
+# keying automatically now); leaving DMQ_USRLOC_PARAMS empty to avoid a config
+# parse error on Kamailio 5.8 (Alpine).
+DMQ_USRLOC_PARAMS=""
+DMQ_ROUTE="if (\\\$rm == \"KDMQ\") { dmq_handle_message(); exit; }"
 DMQ_EVENT_ROUTE='event_route[dmq:mod-init] {
     xlog("L_WARN", "DMQ module initialized for cluster ${CLUSTER_ID}\n");
 }'

@@ -28,8 +28,8 @@ ${WITH_DMQ_DEFINE}
 #!define RTPENGINE_URI "udp:${RTPENGINE_HOST}:${RTPENGINE_PORT}"
 #!define EXTERNAL_IP_ADDR "${SIP_EXTERNAL_IP}"
 #!define SIP_DOMAIN "${SIP_DOMAIN}"
-#!define SIP_PORT ${SIP_PORT:-5060}
-#!define SIPS_PORT ${SIPS_PORT:-5061}
+#!define SIP_PORT ${SIP_PORT}
+#!define SIPS_PORT ${SIPS_PORT}
 
 ${DMQ_CONFIG}
 
@@ -59,9 +59,9 @@ mhomed = 1
 alias = "${SIP_DOMAIN}"
 
 # Listen on all interfaces; advertise external IP for NAT traversal
-listen = udp:0.0.0.0:${SIP_PORT:-5060} advertise EXTERNAL_IP_ADDR:${SIP_PORT:-5060}
-listen = tcp:0.0.0.0:${SIP_PORT:-5060} advertise EXTERNAL_IP_ADDR:${SIP_PORT:-5060}
-listen = tls:0.0.0.0:${SIPS_PORT:-5061} advertise EXTERNAL_IP_ADDR:${SIPS_PORT:-5061}
+listen = udp:0.0.0.0:${SIP_PORT} advertise EXTERNAL_IP_ADDR:${SIP_PORT}
+listen = tcp:0.0.0.0:${SIP_PORT} advertise EXTERNAL_IP_ADDR:${SIP_PORT}
+listen = tls:0.0.0.0:${SIPS_PORT} advertise EXTERNAL_IP_ADDR:${SIPS_PORT}
 
 # DMQ listen address (for peer-to-peer location sync)
 ${DMQ_LISTEN}
@@ -70,7 +70,7 @@ ${DMQ_LISTEN}
 # Module Loading
 #======================================================================
 
-mpath = "/usr/lib64/kamailio/modules/"
+mpath = "/usr/lib/kamailio/modules/"
 
 loadmodule "db_mysql.so"
 loadmodule "kex.so"
@@ -93,7 +93,6 @@ loadmodule "ctl.so"
 loadmodule "cfg_rpc.so"
 loadmodule "acc.so"
 loadmodule "xhttp.so"
-loadmodule "jsonrpcs.so"
 loadmodule "ipops.so"
 loadmodule "sdpops.so"
 loadmodule "nathelper.so"
@@ -113,10 +112,13 @@ ${DMQ_MODULES}
 # Module Parameters
 #======================================================================
 
-# jsonrpcs (control interface for web UI/API)
-modparam("jsonrpcs", "pretty_format", 1)
-modparam("jsonrpcs", "fifo_name", "/var/run/kamailio/kamailio_rpc.fifo")
-modparam("jsonrpcs", "transport", 3)
+# jsonrpcs module is not packaged in Alpine's Kamailio build.
+# The Flask REST API (port 5000) is the primary control plane for this
+# project, so the JSON-RPC-over-xhttp control interface is not used.
+# ctl/cfg_rpc still provide a FIFO/RPC control socket.
+# modparam("jsonrpcs", "pretty_format", 1)
+# modparam("jsonrpcs", "fifo_name", "/var/run/kamailio/kamailio_rpc.fifo")
+# modparam("jsonrpcs", "transport", 3)
 
 # ctl (control interface)
 modparam("ctl", "binrpc", "unix:/var/run/kamailio/kamailio_ctl")
@@ -228,7 +230,11 @@ ${DMQ_PARAMS}
 #======================================================================
 
 event_route[xhttp:request] {
-    jsonrpc_exec("");
+    # jsonrpcs not available on Alpine; xhttp endpoint is a no-op.
+    # SIP/API control is handled by the Flask gunicorn service on :5000.
+    xlog("L_INFO", "xhttp request received - no jsonrpcs handler\n");
+    xhttp_reply("200", "OK", "text/plain", "SipMan xhttp endpoint\n");
+    exit;
 }
 
 
@@ -384,7 +390,7 @@ failure_route[FAIL] {
 #======================================================================
 
 event_route[kamailio:startup] {
-    xlog("L_WARN", "SipMan Kamailio started — cluster ${CLUSTER_ID:-primary}\n");
+    xlog("L_WARN", "SipMan Kamailio started — cluster ${CLUSTER_ID}\n");
 }
 
 event_route[kamailio:shutdown] {

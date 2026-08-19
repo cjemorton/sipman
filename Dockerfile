@@ -1,51 +1,64 @@
 # ============================================================
 # SipMan Backend — Dockerfile
 # Self-contained Kamailio + RTPEngine + MariaDB + Flask API
-# Base: Rocky Linux 9 (Kamailio available via EPEL)
+# Base: Alpine Linux 3.20
+#
+# Kamailio and RTPEngine are NOT available as RPMs for EL9/Rocky
+# (EPEL 9 has no Kamailio; rpm.kamailio.org only covers CentOS <=7).
+# Alpine's community repo ships prebuilt Kamailio + RTPEngine for
+# both x86_64 and aarch64, so we fall back to Alpine per the task spec.
 # ============================================================
 
-FROM rockylinux:9
+FROM alpine:3.20
 
-# ---- Avoid interactive prompts ----
-ENV DNF_NONINTERACTIVE=1
-
-# ---- Enable EPEL and CRB (Kamailio + RTPEngine live in EPEL) ----
-# dnf-plugins-core provides `dnf config-manager` used to enable CRB.
-# EPEL needs CRB enabled for some build dependencies.
-RUN dnf install -y epel-release dnf-plugins-core && \
-    dnf config-manager --set-enabled crb
+# ---- Enable the community repository (Kamailio + RTPEngine live here) ----
+# The default alpine image ships only the "main" repo. We append a matching
+# "community" line derived from the existing main line.
+RUN grep -m1 '/main$' /etc/apk/repositories | sed 's/main/community/' >> /etc/apk/repositories
 
 # ---- Install system packages ----
-# Kamailio modules on Rocky/EPEL use the "kamailio-<name>" naming
-# (no "-modules" suffix). Module path is /usr/lib64/kamailio/modules/.
-# NOTE: No inline comments inside RUN continuation blocks — BuildKit breaks on them.
-RUN dnf install -y \
+# Alpine Kamailio is split into sub-packages; module -> package mapping:
+#   kamailio (core)            : kex, corex, tm, sl, rr, path, pv, maxfwd,
+#                               usrloc, registrar, textops, siputils, xlog,
+#                               sanity, ctl, cfg_rpc, acc, xhttp, jsonrpcs,
+#                               ipops, sdpops, nathelper, htable, pike,
+#                               rtpengine.so
+#   kamailio-mysql             : db_mysql.so
+#   kamailio-db                : dispatcher, domain, dialog, auth_db, permissions
+#   kamailio-tls               : tls.so
+#   kamailio-extras            : dmq.so
+#   rtpengine (separate pkg)   : /usr/bin/rtpengine daemon
+# MariaDB Alpine package creates the "mysql" user automatically.
+RUN apk add --no-cache \
     kamailio \
+    kamailio-db \
     kamailio-mysql \
     kamailio-tls \
-    kamailio-rtpengine \
-    kamailio-dispatcher \
-    kamailio-extra \
-    kamailio-dmq \
-    kamailio-utils \
+    kamailio-extras \
     rtpengine \
-    mariadb-server \
+    nftables \
+    iptables \
+    iproute2 \
     mariadb \
+    mariadb-client \
     supervisor \
     gettext \
     openssl \
     curl \
-    procps-ng \
+    procps \
     python3 \
-    python3-pip \
-    && dnf clean all
+    py3-pip \
+    py3-virtualenv \
+    bash \
+    && rm -rf /var/cache/apk/*
 
 # ---- Create Python venv & install Flask deps ----
-# Rocky 9 ships Python 3.9; venv is part of the stdlib (python3 package).
+# Alpine's python3 stdlib includes venv; py3-virtualenv ensures the module.
 RUN python3 -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 COPY requirements.txt /tmp/requirements.txt
-RUN pip install --no-cache-dir -r /tmp/requirements.txt
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r /tmp/requirements.txt
 
 # ---- Copy application code ----
 WORKDIR /app
@@ -63,7 +76,9 @@ COPY docker/dmq_helper.sh /dmq_helper.sh
 RUN chmod +x /entrypoint.sh /dmq_helper.sh
 
 # ---- Create directories & permissions ----
-# Rocky/EPEL Kamailio runs as user "kamailio"; MariaDB runs as "mysql".
+# Alpine auto-assigns distinct uids when both kamailio and mariadb packages
+# are installed (kamailio=100, mysql=101 when kamailio installs first).
+# chown by name so ownership is unambiguous regardless of uid numbering.
 RUN mkdir -p /data /var/run/kamailio /var/run/mariadb \
     /var/log/supervisor /etc/kamailio/tls \
     && chown -R kamailio:kamailio /var/run/kamailio /etc/kamailio \
