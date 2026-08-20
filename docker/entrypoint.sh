@@ -91,8 +91,10 @@ fi
 
 echo "[SIPMAN] Loading Kamailio database schema..."
 if [ -d "/usr/share/kamailio/mysql" ]; then
+    # --force: continue past individual statement errors (e.g. CREATE TABLE
+    # on a pre-existing table) so the rest of the file still executes.
     for f in /usr/share/kamailio/mysql/*.sql; do
-        mariadb -u root $ROOT_FLAG "${MYSQL_DB}" < "$f" 2>/dev/null || true
+        mariadb --force -u root $ROOT_FLAG "${MYSQL_DB}" < "$f" 2>/dev/null || true
     done
     # Also create the SIPMAN-specific tables if not in default schema
     mariadb -u root $ROOT_FLAG "${MYSQL_DB}" <<'SQL'
@@ -129,6 +131,7 @@ INSERT IGNORE INTO version (table_name, table_version) VALUES
     ('dialplan','2'),
     ('dispatcher','4'),
     ('domain','2'),
+    ('domain_attrs','1'),
     ('domainpolicy','2'),
     ('dr_gateways','5'),
     ('dr_groups','2'),
