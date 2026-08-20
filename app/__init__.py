@@ -10,6 +10,7 @@ import os
 import sys
 
 from flask import Flask
+from flask_cors import CORS
 
 from app.config import Config
 from app.database import init_admin_db, check_mariadb
@@ -19,6 +20,11 @@ def create_app(config_class=Config):
     """Application factory pattern."""
     app = Flask(__name__)
     app.config.from_object(config_class)
+
+    # ---- CORS: allow the PWA (from sipman.mrnet.work or direct) to call
+    # this API directly. Also allows the Worker proxy origin.
+    CORS(app, origins=app.config.get('CORS_ORIGINS', '*'),
+         supports_credentials=True)
 
     # ---- Initialize SQLite admin DB (auth tokens, settings) ----
     init_admin_db()
