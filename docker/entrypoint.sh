@@ -93,7 +93,12 @@ echo "[SIPMAN] Loading Kamailio database schema..."
 if [ -d "/usr/share/kamailio/mysql" ]; then
     # --force: continue past individual statement errors (e.g. CREATE TABLE
     # on a pre-existing table) so the rest of the file still executes.
+    # Skip IMS schema files — they create conflicting 'location' and 'contact'
+    # tables with an IMS-specific schema that breaks the standard usrloc module.
     for f in /usr/share/kamailio/mysql/*.sql; do
+        case "$(basename "$f")" in
+            ims_*) continue ;;  # IMS modules not used in this project
+        esac
         mariadb --force -u root $ROOT_FLAG "${MYSQL_DB}" < "$f" 2>/dev/null || true
     done
     # Also create the SIPMAN-specific tables if not in default schema
