@@ -41,9 +41,15 @@ def kamcmd_json(command):
 
 
 def check_process(name):
-    """Check if a named process is running via pgrep."""
+    """Check if a named process is running via pgrep.
+
+    Uses substring match (pgrep without -x) because on Alpine/BusyBox
+    pgrep -x matches the full process comm name (limited to 15 chars and
+    may include the binary path), which fails for processes started as
+    /usr/sbin/kamailio or /usr/bin/rtpengine.
+    """
     try:
-        r = subprocess.run(['pgrep', '-x', name], capture_output=True)
+        r = subprocess.run(['pgrep', name], capture_output=True)
         return r.returncode == 0
     except Exception:
         return False
@@ -70,6 +76,6 @@ def system_status():
         'kamailio_running': check_process('kamailio'),
         'rtpengine_running': rtp_ok,
         'mariadb_running': check_process('mariadbd') or check_process('mysqld'),
-        'nginx_running': check_process('nginx'),
+        'nginx_running': check_process('gunicorn'),  # API server (no nginx in this image)
         'db_connected': db_ok,
     }
