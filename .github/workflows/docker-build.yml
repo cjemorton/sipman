@@ -10,11 +10,11 @@
 #   - Tags matching v*
 #   - Manual dispatch
 #
-# Registry: ghcr.io/cjemorton/sipman
+# Registry: ghcr.io/mrnet-work/sipman
 # Tags pushed:
-#   - ghcr.io/cjemorton/sipman:latest        (main branch only)
-#   - ghcr.io/cjemorton/sipman:<short-sha>   (every build)
-#   - ghcr.io/cjemorton/sipman:<tag>         (on tag push, e.g. v2.2-alpine)
+#   - ghcr.io/mrnet-work/sipman:latest        (main branch only)
+#   - ghcr.io/mrnet-work/sipman:<short-sha>   (every build)
+#   - ghcr.io/mrnet-work/sipman:<tag>         (on tag push, e.g. v2.2-alpine)
 # ============================================================
 
 name: Build & Push Docker Image
@@ -29,7 +29,7 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}  # cjemorton/sipman
+  IMAGE_NAME: ${{ github.repository }}  # mrnet-work/sipman
 
 jobs:
   build-and-push:
